@@ -12,20 +12,32 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 load_dotenv()
 
 
-def load_documents() -> List[str]:
+def load_documents() -> List[dict]:
     """
-    Load documents for demonstration.
+    Load documents from the data directory.
 
     Returns:
-        List of sample documents
+        List of document dictionaries with content and metadata
     """
     results = []
-    # TODO: Implement document loading
-    # HINT: Read the documents from the data directory
-    # HINT: Return a list of documents
-    # HINT: Your implementation depends on the type of documents you are using (.txt, .pdf, etc.)
+    data_dir = os.path.join(os.path.dirname(__file__), '..', 'data')
+    data_dir = os.path.abspath(data_dir)
 
-    # Your implementation here
+    for filename in os.listdir(data_dir):
+        if filename.endswith('.txt'):
+            filepath = os.path.join(data_dir, filename)
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                results.append({
+                    'content': content,
+                    'metadata': {'source': filename}
+                })
+                print(f"Loaded: {filename}")
+            except Exception as e:
+                print(f"Error loading {filename}: {e}")
+
+    print(f"Total documents loaded: {len(results)}")
     return results
 
 
@@ -37,7 +49,7 @@ class RAGAssistant:
 
     def __init__(self):
         """Initialize the RAG assistant."""
-        # Initialize LLM - check for available API keys in order of preference
+        # Initialize LLM
         self.llm = self._initialize_llm()
         if not self.llm:
             raise ValueError(
@@ -49,11 +61,21 @@ class RAGAssistant:
         self.vector_db = VectorDB()
 
         # Create RAG prompt template
-        # TODO: Implement your RAG prompt template
-        # HINT: Use ChatPromptTemplate.from_template() with a template string
-        # HINT: Your template should include placeholders for {context} and {question}
-        # HINT: Design your prompt to effectively use retrieved context to answer questions
-        self.prompt_template = None  # Your implementation here
+        self.prompt_template = ChatPromptTemplate.from_template(
+            """You are a helpful AI assistant. Use the following context to answer 
+the user's question accurately and concisely.
+
+If the context does not contain enough information to answer the question, 
+say "I don't have enough information in my knowledge base to answer that question."
+
+Context:
+{context}
+
+Question:
+{question}
+
+Answer:"""
+        )
 
         # Create the chain
         self.chain = self.prompt_template | self.llm | StrOutputParser()
@@ -65,7 +87,6 @@ class RAGAssistant:
         Initialize the LLM by checking for available API keys.
         Tries OpenAI, Groq, and Google Gemini in that order.
         """
-        # Check for OpenAI API key
         if os.getenv("OPENAI_API_KEY"):
             model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
             print(f"Using OpenAI model: {model_name}")
@@ -91,7 +112,8 @@ class RAGAssistant:
 
         else:
             raise ValueError(
-                "No valid API key found. Please set one of: OPENAI_API_KEY, GROQ_API_KEY, or GOOGLE_API_KEY in your .env file"
+                "No valid API key found. Please set one of: "
+                "OPENAI_API_KEY, GROQ_API_KEY, or GOOGLE_API_KEY in your .env file"
             )
 
     def add_documents(self, documents: List) -> None:
@@ -108,20 +130,25 @@ class RAGAssistant:
         Query the RAG assistant.
 
         Args:
-            input: User's input
+            input: User's question
             n_results: Number of relevant chunks to retrieve
 
         Returns:
-            Dictionary containing the answer and retrieved context
+            String answer from the LLM
         """
-        llm_answer = ""
-        # TODO: Implement the RAG query pipeline
-        # HINT: Use self.vector_db.search() to retrieve relevant context chunks
-        # HINT: Combine the retrieved document chunks into a single context string
-        # HINT: Use self.chain.invoke() with context and question to generate the response
-        # HINT: Return a string answer from the LLM
+        # Step 1: Search for relevant context
+        search_results = self.vector_db.search(input, n_results=n_results)
 
-        # Your implementation here
+        # Step 2: Combine retrieved chunks into a single context string
+        documents = search_results.get("documents", [[]])[0]
+        context = "\n\n".join(documents) if documents else "No relevant context found."
+
+        # Step 3: Generate response using LLM + context
+        llm_answer = self.chain.invoke({
+            "context": context,
+            "question": input
+        })
+
         return llm_answer
 
 
@@ -132,7 +159,7 @@ def main():
         print("Initializing RAG Assistant...")
         assistant = RAGAssistant()
 
-        # Load sample documents
+        # Load documents
         print("\nLoading documents...")
         sample_docs = load_documents()
         print(f"Loaded {len(sample_docs)} sample documents")
@@ -142,12 +169,12 @@ def main():
         done = False
 
         while not done:
-            question = input("Enter a question or 'quit' to exit: ")
+            question = input("\nEnter a question or 'quit' to exit: ")
             if question.lower() == "quit":
                 done = True
             else:
-                result = assistant.query(question)
-                print(result)
+                result = assistant.invoke(question)
+                print(f"\nAnswer: {result}")
 
     except Exception as e:
         print(f"Error running RAG assistant: {e}")
