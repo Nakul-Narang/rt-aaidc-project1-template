@@ -41,7 +41,7 @@ class VectorDB:
 
     def chunk_text(self, text: str, chunk_size: int = 500) -> List[str]:
         """
-        Simple text chunking by splitting on spaces and grouping into chunks.
+        Split text into smaller chunks for better retrieval.
 
         Args:
             text: Input text to chunk
@@ -50,26 +50,21 @@ class VectorDB:
         Returns:
             List of text chunks
         """
-        # TODO: Implement text chunking logic
-        # You have several options for chunking text - choose one or experiment with multiple:
-        #
-        # OPTION 1: Simple word-based splitting
-        #   - Split text by spaces and group words into chunks of ~chunk_size characters
-        #   - Keep track of current chunk length and start new chunks when needed
-        #
-        # OPTION 2: Use LangChain's RecursiveCharacterTextSplitter
-        #   - from langchain_text_splitters import RecursiveCharacterTextSplitter
-        #   - Automatically handles sentence boundaries and preserves context better
-        #
-        # OPTION 3: Semantic splitting (advanced)
-        #   - Split by sentences using nltk or spacy
-        #   - Group semantically related sentences together
-        #   - Consider paragraph boundaries and document structure
-        #
-        # Feel free to try different approaches and see what works best!
-
         chunks = []
-        # Your implementation here
+        words = text.split()
+        current_chunk = []
+        current_length = 0
+
+        for word in words:
+            current_chunk.append(word)
+            current_length += len(word) + 1
+            if current_length >= chunk_size:
+                chunks.append(' '.join(current_chunk))
+                current_chunk = []
+                current_length = 0
+
+        if current_chunk:
+            chunks.append(' '.join(current_chunk))
 
         return chunks
 
@@ -78,19 +73,34 @@ class VectorDB:
         Add documents to the vector database.
 
         Args:
-            documents: List of documents
+            documents: List of documents with 'content' and optional 'metadata'
         """
-        # TODO: Implement document ingestion logic
-        # HINT: Loop through each document in the documents list
-        # HINT: Extract 'content' and 'metadata' from each document dict
-        # HINT: Use self.chunk_text() to split each document into chunks
-        # HINT: Create unique IDs for each chunk (e.g., "doc_0_chunk_0")
-        # HINT: Use self.embedding_model.encode() to create embeddings for all chunks
-        # HINT: Store the embeddings, documents, metadata, and IDs in your vector database
-        # HINT: Print progress messages to inform the user
-
         print(f"Processing {len(documents)} documents...")
-        # Your implementation here
+
+        all_chunks = []
+        all_ids = []
+        all_metadatas = []
+
+        for doc_idx, document in enumerate(documents):
+            content = document.get('content', '')
+            metadata = document.get('metadata', {})
+            chunks = self.chunk_text(content)
+
+            for chunk_idx, chunk in enumerate(chunks):
+                all_chunks.append(chunk)
+                all_ids.append(f"doc_{doc_idx}_chunk_{chunk_idx}")
+                all_metadatas.append(metadata)
+
+        print(f"Creating embeddings for {len(all_chunks)} chunks...")
+        embeddings = self.embedding_model.encode(all_chunks).tolist()
+
+        self.collection.add(
+            documents=all_chunks,
+            embeddings=embeddings,
+            metadatas=all_metadatas,
+            ids=all_ids
+        )
+
         print("Documents added to vector database")
 
     def search(self, query: str, n_results: int = 5) -> Dict[str, Any]:
@@ -102,19 +112,18 @@ class VectorDB:
             n_results: Number of results to return
 
         Returns:
-            Dictionary containing search results with keys: 'documents', 'metadatas', 'distances', 'ids'
+            Dictionary with keys: 'documents', 'metadatas', 'distances', 'ids'
         """
-        # TODO: Implement similarity search logic
-        # HINT: Use self.embedding_model.encode([query]) to create query embedding
-        # HINT: Convert the embedding to appropriate format for your vector database
-        # HINT: Use your vector database's search/query method with the query embedding and n_results
-        # HINT: Return a dictionary with keys: 'documents', 'metadatas', 'distances', 'ids'
-        # HINT: Handle the case where results might be empty
+        query_embedding = self.embedding_model.encode([query]).tolist()
 
-        # Your implementation here
+        results = self.collection.query(
+            query_embeddings=query_embedding,
+            n_results=n_results
+        )
+
         return {
-            "documents": [],
-            "metadatas": [],
-            "distances": [],
-            "ids": [],
+            "documents": results.get("documents", [[]]),
+            "metadatas": results.get("metadatas", [[]]),
+            "distances": results.get("distances", [[]]),
+            "ids": results.get("ids", [[]])
         }
